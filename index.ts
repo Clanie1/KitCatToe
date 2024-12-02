@@ -3,6 +3,8 @@ import * as resources from "@pulumi/azure-native/resources";
 import * as storage from "@pulumi/azure-native/storage";
 import * as azure from "@pulumi/azure-native";
 import * as dotenv from "dotenv";
+import * as fs from "fs";
+import * as sql from "mssql";
 
 dotenv.config();
 
@@ -58,7 +60,7 @@ const sqlDatabase = new azure.sql.Database("sqlDatabase", {
   sku: {
     name: "Basic",
     tier: "Basic",
-    capacity: 5, // Capacidad de DTU (puedes cambiarlo según tus necesidades)
+    capacity: 5,
   },
   maxSizeBytes: 2147483648,
 });
@@ -70,7 +72,43 @@ const firewallRule = new azure.sql.FirewallRule("firewallRule", {
   endIpAddress: "255.255.255.255",
 });
 
-// Exportar los valores de utilidad
+async function initializeDatabase(serverName: string, databaseName: string) {
+  const sqlConfig = {
+    user: "clanie1barocio",
+    password: "P@ssw0rd1234",
+    server: serverName,
+    database: databaseName,
+    options: {
+      encrypt: true,
+      trustServerCertificate: false,
+    },
+  };
+
+  let pool: sql.ConnectionPool | undefined;
+
+  try {
+    pool = await sql.connect(sqlConfig);
+
+    const script = fs.readFileSync("./initialize.sql", "utf-8");
+    await pool.request().query(script);
+
+    console.log("Database initialized successfully!");
+  } catch (error) {
+    console.error("Error initializing database:", error);
+  } finally {
+    if (pool) {
+      await pool.close(); // Cierra la conexión con la base de datos
+      console.log("Database connection closed.");
+    }
+  }
+}
+
+pulumi
+  .all([sqlServer.fullyQualifiedDomainName, sqlDatabase.name])
+  .apply(async ([serverName, dbName]) => {
+    await initializeDatabase(serverName, dbName);
+  });
+
 export const sqlServerName = sqlServer.name;
 export const sqlDatabaseName = sqlDatabase.name;
 export const sqlAdminLogin = sqlServer.administratorLogin;
